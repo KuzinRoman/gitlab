@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Развёртывание GitLab на сервере через VS Code + Docker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/theme/night.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/plugin/highlight/monokai.css">
+<style>
+  .reveal pre { width: 100%; box-shadow: none; }
+  .reveal pre code { max-height: 480px; font-size: 0.47em; line-height: 1.35; padding: 14px 18px; overflow-y: auto; }
+  .reveal h1 { font-size: 1.6em; }
+  .reveal h2 { font-size: 1.25em; color: #f06c2c; }
+  .reveal h3 { color: #9fd3ff; }
+  .reveal section { text-align: left; }
+  .reveal section.center, .reveal .title-slide { text-align: center; }
+  .reveal ul { font-size: 0.78em; }
+  .reveal ol { font-size: 0.78em; }
+  .badge { display:inline-block; background:#2b2b2b; color:#9fd3ff; border-radius:6px; padding:2px 10px; font-family: monospace; font-size:0.7em; margin: 2px 4px 2px 0; }
+  .step-num { color:#f06c2c; font-weight:bold; }
+  .small { font-size: 0.65em; }
+  .two-col { display:flex; gap: 30px; }
+  .two-col > div { flex: 1; }
+  .warn { background:#3a2a1a; border-left:4px solid #f06c2c; padding:8px 14px; font-size:0.7em; margin-top:10px;}
+  .ok { background:#1a3a23; border-left:4px solid #3ecf6a; padding:8px 14px; font-size:0.7em; margin-top:10px;}
+  .mockup { background:#1f1f1f; border:1px solid #444; border-radius:8px; padding:16px 20px; font-size:0.6em; margin-top:10px; }
+  .mockup .field-label { color:#9fd3ff; margin-top:10px; }
+  .mockup .field-box { background:#141414; border:1px solid #555; border-radius:6px; padding:8px 12px; margin-top:4px; color:#888; }
+  .mockup .hint { background:#262626; border-radius:6px; padding:8px 12px; margin-top:10px; font-size:0.95em; }
+</style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<section class="title-slide">
+  <h1>Развёртывание GitLab</h1>
+  <h3>на удалённом сервере через VS Code + Docker</h3>
+  <p class="small">Подключение по SSH → установка Docker → запуск GitLab в контейнере</p>
+</section>
+
+<section>
+  <h2>План работы</h2>
+  <div class="two-col" style="gap:50px; margin-top: 10px;">
+    <div>
+      <p style="color:#f06c2c; font-size:0.75em; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em;">Подготовительный этап</p>
+      <ol style="font-size:0.72em; margin:0;">
+        <li>Регистрация в Selectel и пополнение баланса (300 ₽)</li>
+        <li>Установить VS Code и плагины</li>
+        <li>Сгенерировать SSH-ключ и добавить в Selectel</li>
+        <li>Заказать сервер в Selectel (Ubuntu)</li>
+      </ol>
+    </div>
+    <div style="border-left:1px solid #444; padding-left:30px;">
+      <p style="color:#9fd3ff; font-size:0.75em; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em;">Технический этап</p>
+      <ol style="font-size:0.72em; margin:0;">
+        <li>Подключиться к серверу по SSH из VS Code</li>
+        <li>Установить Docker на сервер</li>
+        <li>Подготовить структуру папок для GitLab</li>
+        <li>Создать <code>.env</code> и <code>docker-compose.yml</code></li>
+        <li>Запустить GitLab и проверить логи</li>
+        <li>Открыть порты, проверить доступность</li>
+        <li>Войти в GitLab</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- 1. Local install -->
+<section>
+<section>
+  <h2><span class="step-num">1.</span> Что установить локально</h2>
+  <h3>1.1 Visual Studio Code</h3>
+  <p>Установить обычную версию VS Code — без неё дальнейшие шаги не имеют смысла.</p>
+</section>
+
+<section>
+  <h3>1.2 Плагины VS Code — все обязательные</h3>
+  <p><span class="badge">Remote - SSH</span> <span class="small">ms-vscode-remote.remote-ssh</span><br>
+  Открывает удалённую папку на сервере как локальную: редактор, терминал, выполнение команд прямо на сервере.</p>
+  <p><span class="badge">Remote Explorer</span><br>
+  Навигация по удалённым SSH-подключениям и хостам прямо из боковой панели.</p>
+  <p><span class="badge">YAML</span><br>
+  Подсветка и валидация <code>docker-compose.yml</code>.</p>
+  <p><span class="badge">GitLens</span><br>
+  Удобная работа с Git-историей.</p>
+  <p><span class="badge">Error Lens</span><br>
+  Подсветка ошибок прямо в строках кода.</p>
+</section>
+</section>
+
+<!-- 2. SSH key + Selectel -->
+<section>
+<section>
+  <h2><span class="step-num">2.</span> Сгенерировать SSH-ключ и добавить в Selectel</h2>
+  <h3>2.1 Сгенерировать ключ в PowerShell</h3>
+  <pre><code class="language-powershell"># генерируем пару SSH-ключей (приватный + публичный) по алгоритму ed25519
+ssh-keygen -t ed25519</code></pre>
+  <p class="small">На все вопросы можно нажимать Enter (путь по умолчанию <code>C:\Users\&lt;User&gt;\.ssh\id_ed25519</code>, пароль — опционально).</p>
+  <p class="small">В результате появятся два файла:</p>
+  <pre><code class="language-text">id_ed25519       — приватный ключ (никому не передавать)
+id_ed25519.pub   — публичный ключ (его добавляем в Selectel)</code></pre>
+</section>
+
+<section>
+  <h3>2.2 Скопировать публичный ключ</h3>
+  <pre><code class="language-powershell"># выводим публичный ключ и сразу копируем его в буфер обмена
+Get-Content $env:USERPROFILE\.ssh\id_ed25519.pub | Set-Clipboard</code></pre>
+  <p class="small">Содержимое файла <code>id_ed25519.pub</code> скопировано в буфер обмена.</p>
+</section>
+
+<section>
+  <h3>2.3 Добавить ключ в админке Selectel</h3>
+  <div class="mockup">
+    <strong>Новый SSH-ключ</strong>
+    <div class="field-label">Имя</div>
+    <div class="field-box">например: my-laptop</div>
+    <div class="field-label">Публичный ключ</div>
+    <div class="field-box">вставить содержимое id_ed25519.pub (начинается с ssh-ed25519 ...)</div>
+    <div class="hint">Сгенерировать пару SSH-ключей можно через терминал — используйте команду:<br><code>ssh-keygen -t ed25519</code></div>
+  </div>
+  <p class="small">В панели Selectel: раздел SSH-ключей → «Добавить ключ» → вставить публичный ключ → «Добавить». Это даёт доступ к серверу по ключу при заказе/привязке сервера.</p>
+</section>
+</section>
+
+<!-- 3. SSH connect (was 2) -->
+<section>
+<section>
+  <h2><span class="step-num">3.</span> Подключение к серверу из VS Code</h2>
+  <h3>3.1 Проверка SSH из обычного терминала</h3>
+  <pre><code class="language-bash"># подключаемся к серверу по SSH (порт по умолчанию 22)
+ssh root@135.106.144.236
+
+# если используется нестандартный порт, например 22222:
+ssh root@135.106.144.236 -p 22222</code></pre>
+</section>
+
+<section>
+  <h3>3.2 Добавить сервер в SSH config</h3>
+  <p>Файл: <code>~/.ssh/config</code> (Windows: <code>C:\Users\&lt;User&gt;\.ssh\config</code>)</p>
+  <pre><code class="language-ini"># алиас хоста — позволяет подключаться командой "ssh abia-gitlab"
+Host abia-gitlab
+    HostName 135.106.144.236       # IP-адрес сервера
+    User root                      # пользователь для входа по SSH
+    Port 22                        # порт SSH на сервере
+    IdentityFile ~/.ssh/id_ed25519 # приватный ключ для авторизации</code></pre>
+  <p>Проверка: <code>ssh abia-gitlab</code></p>
+</section>
+
+<section>
+  <h3>3.3 Подключиться из VS Code</h3>
+  <pre><code class="language-text">F1 / Ctrl+Shift+P
+→ Remote-SSH: Connect to Host...
+→ abia-gitlab</code></pre>
+  <p>После подключения открыть рабочую папку:</p>
+  <pre><code class="language-text">File → Open Folder → /srv/gitlab</code></pre>
+</section>
+</section>
+
+<!-- 4. Install Docker (was 3) - Ubuntu -->
+<section>
+<section>
+  <h2><span class="step-num">4.</span> Установить Docker на сервер (Ubuntu)</h2>
+  <p class="small">Все команды выполняются в терминале VS Code, уже подключённом к серверу.</p>
+  <pre><code class="language-bash"># проверяем название и версию ОС сервера
+cat /etc/os-release</code></pre>
+  <p class="small">Сервер — Ubuntu → используем официальный apt-репозиторий Docker для Ubuntu.</p>
+</section>
+
+<section>
+  <h3>4.1–4.2 Зависимости и ключ Docker</h3>
+  <pre><code class="language-bash"># обновляем список пакетов apt
+apt-get update
+# ставим зависимости, нужные для подключения репозитория Docker по https
+apt-get install -y ca-certificates curl gnupg
+
+# создаём каталог для хранения GPG-ключей репозиториев
+install -m 0755 -d /etc/apt/keyrings
+# скачиваем официальный GPG-ключ Docker
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+  -o /etc/apt/keyrings/docker.asc
+# даём всем пользователям право читать ключ
+chmod a+r /etc/apt/keyrings/docker.asc</code></pre>
+</section>
+
+<section>
+  <h3>4.3–4.4 Репозиторий и установка</h3>
+  <pre><code class="language-bash"># добавляем официальный репозиторий Docker для Ubuntu в список источников apt
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  > /etc/apt/sources.list.d/docker.list
+
+# обновляем список пакетов с учётом нового репозитория
+apt-get update
+# устанавливаем Docker Engine, CLI, containerd и плагины buildx/compose
+apt-get install -y \
+  docker-ce docker-ce-cli containerd.io \
+  docker-buildx-plugin docker-compose-plugin</code></pre>
+</section>
+
+<section>
+  <h3>4.5–4.6 Запуск и проверка</h3>
+  <pre><code class="language-bash"># включаем автозапуск Docker и сразу запускаем службу
+systemctl enable --now docker
+
+# проверяем установленную версию Docker
+docker --version
+# проверяем установленную версию Docker Compose
+docker compose version
+# тестовый запуск контейнера — подтверждает, что Docker работает корректно
+docker run hello-world</code></pre>
+</section>
+</section>
+
+<!-- 5-6-7 prepare (was 4-5-6) -->
+<section>
+<section>
+  <h2><span class="step-num">5.</span> Подготовить папку GitLab</h2>
+  <pre><code class="language-bash"># создаём папку для конфигурации GitLab
+mkdir -p /srv/gitlab/config
+# создаём папку для логов GitLab
+mkdir -p /srv/gitlab/logs
+# создаём папку для данных GitLab (репозитории, БД и т.д.)
+mkdir -p /srv/gitlab/data
+# выставляем права доступа на всю структуру папок
+chmod -R 755 /srv/gitlab
+# переходим в рабочую папку проекта
+cd /srv/gitlab
+
+# выводим текущий путь — убедиться, что мы в /srv/gitlab
+pwd
+# выводим содержимое папки и проверяем, что подпапки созданы
+ls -la</code></pre>
+  <p>Ожидаемо: <code>/srv/gitlab</code> с подпапками <code>config/ data/ logs/</code></p>
+</section>
+
+<section>
+  <h2><span class="step-num">6.</span> Создать <code>.env</code></h2>
+  <pre><code class="language-bash"># переходим в папку проекта (обязательно перед запуском compose)
+cd /srv/gitlab
+# открываем/создаём файл .env в редакторе nano
+nano .env</code></pre>
+  <pre><code class="language-ini">GITLAB_HOST=135.106.144.236   # адрес сервера, используется как external_url
+GITLAB_HTTP_PORT=80           # порт, на котором GitLab отвечает по http
+GITLAB_SSH_PORT=2222          # порт для git-операций по SSH</code></pre>
+  <div class="warn">
+    ⚠️ Важно: запускать <code>docker compose</code> нужно именно из <code>/srv/gitlab</code>, иначе <code>.env</code> не подставится и GitLab получит битый конфиг:
+    <pre style="margin-top:6px"><code class="language-ruby">gitlab_rails['gitlab_shell_ssh_port'] =   # пусто!</code></pre>
+  </div>
+</section>
+
+<section>
+  <h2><span class="step-num">7.</span> Создать <code>docker-compose.yml</code></h2>
+  <pre><code class="language-yaml">services:
+  gitlab:
+    image: gitlab/gitlab-ee:latest       # образ GitLab Enterprise Edition
+    container_name: gitlab               # имя контейнера для docker ps / docker logs
+    restart: always                      # автоперезапуск при падении или ребуте сервера
+    hostname: ${GITLAB_HOST}             # имя хоста внутри контейнера (из .env)
+    ports:
+      - "${GITLAB_HTTP_PORT}:80"         # проброс web-интерфейса наружу
+      - "${GITLAB_SSH_PORT}:22"          # проброс SSH для git clone/push/pull
+    volumes:
+      - /srv/gitlab/config:/etc/gitlab       # конфигурация хранится на хосте
+      - /srv/gitlab/logs:/var/log/gitlab     # логи хранятся на хосте
+      - /srv/gitlab/data:/var/opt/gitlab     # данные (репозитории, БД) хранятся на хосте
+    shm_size: "256m"                     # увеличенная shared memory, нужна GitLab для стабильности
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |           # конфиг GitLab Omnibus, применяется при старте контейнера
+        external_url "http://${GITLAB_HOST}"                       # адрес, по которому доступен GitLab
+        letsencrypt['enable'] = false                               # отключаем автоматический HTTPS
+        nginx['listen_https'] = false                               # nginx слушает http, не https
+        nginx['redirect_http_to_https'] = false                     # не редиректим на https
+        gitlab_rails['gitlab_shell_ssh_port'] = ${GITLAB_SSH_PORT}  # порт SSH для git-операций</code></pre>
+  <p class="small">Поднимает: Web → <code>http://135.106.144.236</code>, Git SSH → <code>ssh://git@135.106.144.236:2222/...</code> (пока без HTTPS и DNS)</p>
+</section>
+</section>
+
+<!-- 8-9 run + logs (was 9-10) -->
+<section>
+<section>
+  <h2><span class="step-num">8.</span> Запустить GitLab</h2>
+  <pre><code class="language-bash"># переходим в папку проекта (обязательно для подстановки .env)
+cd /srv/gitlab
+# запускаем контейнер GitLab в фоновом режиме
+docker compose up -d
+
+# проверяем, что контейнер запущен и слушает нужные порты
+docker ps</code></pre>
+  <p class="small">Ожидаемо: <code>gitlab/gitlab-ee:latest</code>, <code>health: starting</code>, порты <code>0.0.0.0:80→80</code>, <code>0.0.0.0:2222→22</code>.
+  Первый запуск может занять несколько минут.</p>
+</section>
+
+<section>
+  <h2><span class="step-num">9.</span> Смотреть логи GitLab</h2>
+  <pre><code class="language-bash"># смотрим логи контейнера в реальном времени
+docker logs -f gitlab
+# выводим последние 200 строк логов
+docker logs gitlab --tail=200
+
+# проверяем статус внутренних служб GitLab (nginx, postgresql, redis и т.д.)
+docker exec -it gitlab gitlab-ctl status
+
+# проверяем статус healthcheck контейнера
+docker inspect --format='{{json .State.Health.Status}}' gitlab</code></pre>
+  <table style="font-size:0.6em; width:100%; margin-top:10px; border-collapse:collapse;">
+    <tr><td style="padding:4px 12px; color:#9fd3ff;">starting</td><td>ещё запускается</td></tr>
+    <tr><td style="padding:4px 12px; color:#3ecf6a;">healthy</td><td>GitLab готов</td></tr>
+    <tr><td style="padding:4px 12px; color:#f06c2c;">unhealthy</td><td>есть проблема — смотреть logs</td></tr>
+  </table>
+</section>
+</section>
+
+<!-- 10-11 access (was 11-12) -->
+<section>
+<section>
+  <h2><span class="step-num">10.</span> Проверить доступность</h2>
+  <pre><code class="language-bash"># выполняется с сервера
+
+# проверяем, что GitLab отвечает локально (на самом сервере)
+curl -I http://127.0.0.1
+# проверяем, что GitLab отвечает по внешнему IP
+curl -I http://135.106.144.236</code></pre>
+  <p>С локальной машины открыть в браузере: <code>http://135.106.144.236</code></p>
+  <div class="warn">⚠️ Именно <strong>http</strong>, не https — в конфиге <code>nginx['listen_https'] = false</code> и <code>letsencrypt['enable'] = false</code></div>
+</section>
+
+<section>
+  <h2><span class="step-num">11.</span> Открыть firewall</h2>
+  <pre><code class="language-bash"># смотрим текущий статус firewall
+ufw status
+
+# открываем порт 80 (web-интерфейс GitLab)
+ufw allow 80/tcp
+# открываем порт 2222 (SSH для git-операций)
+ufw allow 2222/tcp
+# применяем изменения правил firewall
+ufw reload
+# проверяем, что порты добавлены в правила
+ufw status
+
+# проверяем, какие порты реально слушает сервер
+ss -tulpn | grep -E ':80|:2222|:443'</code></pre>
+  <p class="small">Ожидаемо в выводе: <code>0.0.0.0:80</code> и <code>0.0.0.0:2222</code></p>
+</section>
+</section>
+
+<!-- 12 login (was 13) -->
+<section>
+  <h2><span class="step-num">12.</span> Первый вход в GitLab</h2>
+  <pre><code class="language-bash"># выводим содержимое файла с начальным паролем root
+docker exec -it gitlab cat /etc/gitlab/initial_root_password</code></pre>
+  <p>Найти строку <code>Password: ...</code></p>
+  <p>Открыть <code>http://135.106.144.236</code> и войти:</p>
+  <ul>
+    <li>Username: <code>root</code></li>
+    <li>Password: из файла <code>initial_root_password</code></li>
+  </ul>
+</section>
+
+<section class="center">
+  <h2>Итог</h2>
+  <p>VS Code + Remote-SSH + Docker позволяют развернуть и администрировать GitLab полностью удалённо, без локальной установки чего-либо, кроме самого редактора.</p>
+  <p class="small">Готово: GitLab доступен по http, с собственным SSH-портом для git-операций.</p>
+</section>
+
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/plugin/highlight/highlight.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/plugin/notes/notes.js"></script>
+<script>
+  Reveal.initialize({
+    hash: true,
+    slideNumber: true,
+    transition: 'slide',
+    plugins: [ RevealHighlight, RevealNotes ]
+  });
+</script>
+</body>
+</html>
